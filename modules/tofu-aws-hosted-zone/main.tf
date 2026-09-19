@@ -19,6 +19,10 @@ data "cloudflare_zone" "public" {
   filter = {
     name = local.main_domain
   }
+
+  lifecycle {
+    enabled = var.enable_cloudflare && !var.private_hosted_zone
+  }
 }
 
 resource "aws_route53_zone" "public" {
@@ -48,7 +52,7 @@ resource "cloudflare_dns_record" "public" {
     : toset([])
   )
 
-  zone_id = data.cloudflare_zone.public.id
+  zone_id = try(data.cloudflare_zone.public.id, "")
   name    = var.hosted_zone_name
   content = each.value
   type    = "NS"
