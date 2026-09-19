@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           allowed-account-ids: ${{ secrets.AWS_ACCOUNT_ID }}
@@ -103,7 +103,7 @@ jobs:
           path: src/core
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           allowed-account-ids: ${{ secrets.AWS_ACCOUNT_ID }}
@@ -161,7 +161,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           allowed-account-ids: ${{ secrets.AWS_ACCOUNT_ID }}
@@ -231,7 +231,7 @@ jobs:
           path: src/service
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           allowed-account-ids: ${{ secrets.AWS_ACCOUNT_ID }}
