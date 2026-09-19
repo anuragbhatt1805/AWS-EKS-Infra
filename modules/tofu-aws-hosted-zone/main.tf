@@ -46,15 +46,11 @@ resource "aws_route53_zone" "private" {
 }
 
 resource "cloudflare_dns_record" "public" {
-  for_each = (
-    var.enable_cloudflare && !var.private_hosted_zone
-    ? toset(aws_route53_zone.public.name_servers)
-    : toset([])
-  )
+  count = var.enable_cloudflare && !var.private_hosted_zone ? 4 : 0
 
   zone_id = try(data.cloudflare_zone.public.id, "")
   name    = var.hosted_zone_name
-  content = each.value
+  content = aws_route53_zone.public.name_servers[count.index]
   type    = "NS"
   ttl     = 300
 }
