@@ -42,7 +42,7 @@ resource "aws_route53_zone" "private" {
 }
 
 resource "cloudflare_record" "public" {
-    for_each = toset(aws_route53_zone.public.name_servers)
+  for_each = toset(aws_route53_zone.public.name_servers)
 
   zone_id = data.cloudflare_zone.public.id
   name    = var.hosted_zone_name

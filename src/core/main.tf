@@ -19,14 +19,14 @@ module "s3_gateway_endpoint" {
 module "public_hosted_zone" {
   source = "../../modules/tofu-aws-hosted-zone"
 
-  hosted_zone_name     = var.public_hosted_zone_name
-  enable_cloudflare    = true
+  hosted_zone_name  = var.public_hosted_zone_name
+  enable_cloudflare = true
 }
 
 module "private_hosted_zone" {
   source = "../../modules/tofu-aws-hosted-zone"
 
-  hosted_zone_name     = var.private_hosted_zone_name
-  private_hosted_zone  = true
-  vpc_id               = module.vpc.vpc_id
+  hosted_zone_name    = var.private_hosted_zone_name
+  private_hosted_zone = true
+  vpc_id              = module.vpc.vpc_id
 }
