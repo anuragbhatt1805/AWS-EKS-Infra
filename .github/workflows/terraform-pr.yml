@@ -21,6 +21,7 @@ concurrency:
 env:
   TF_IN_AUTOMATION: true
   AWS_REGION: ${{ secrets.AWS_REGION }}
+  TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
 jobs:
 
