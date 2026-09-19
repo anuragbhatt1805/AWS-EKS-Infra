@@ -41,16 +41,16 @@ resource "aws_route53_zone" "private" {
   }
 }
 
-resource "cloudflare_record" "public" {
-  for_each = toset(aws_route53_zone.public.name_servers)
+resource "cloudflare_dns_record" "public" {
+  for_each = (
+    var.enable_cloudflare && !var.private_hosted_zone
+    ? toset(aws_route53_zone.public.name_servers)
+    : toset([])
+  )
 
   zone_id = data.cloudflare_zone.public.id
   name    = var.hosted_zone_name
-  value   = each.value
+  content = each.value
   type    = "NS"
   ttl     = 300
-
-  lifecycle {
-    enabled = var.enable_cloudflare && !var.private_hosted_zone
-  }
 }
