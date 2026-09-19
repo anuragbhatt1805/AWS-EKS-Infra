@@ -21,6 +21,7 @@ concurrency:
 env:
   TF_IN_AUTOMATION: true
   AWS_REGION: ${{ secrets.AWS_REGION }}
+  TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
 jobs:
 
@@ -76,6 +77,7 @@ jobs:
             -e AWS_SESSION_TOKEN \
             -e AWS_REGION \
             -e AWS_DEFAULT_REGION \
+            -e TF_VAR_cloudflare_api_token \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -w /workspace/src/core \
             ghcr.io/opentofu/opentofu:1.12 \
@@ -92,6 +94,7 @@ jobs:
             -e AWS_SESSION_TOKEN \
             -e AWS_REGION \
             -e AWS_DEFAULT_REGION \
+            -e TF_VAR_cloudflare_api_token \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -w /workspace/src/core \
             ghcr.io/opentofu/opentofu:1.12 \
@@ -268,6 +271,7 @@ jobs:
             -e AWS_SESSION_TOKEN \
             -e AWS_REGION \
             -e AWS_DEFAULT_REGION \
+            -e TF_VAR_cloudflare_api_token \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -w /workspace/src/service \
             ghcr.io/opentofu/opentofu:1.12 \
@@ -284,6 +288,7 @@ jobs:
             -e AWS_SESSION_TOKEN \
             -e AWS_REGION \
             -e AWS_DEFAULT_REGION \
+            -e TF_VAR_cloudflare_api_token \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -w /workspace/src/service \
             ghcr.io/opentofu/opentofu:1.12 \
@@ -665,6 +670,7 @@ jobs:
             -e AWS_SESSION_TOKEN \
             -e AWS_REGION \
             -e AWS_DEFAULT_REGION \
+            -e TF_VAR_cloudflare_api_token \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -w /workspace/src/core \
             ghcr.io/opentofu/opentofu:1.12 \
@@ -681,6 +687,7 @@ jobs:
             -e AWS_SESSION_TOKEN \
             -e AWS_REGION \
             -e AWS_DEFAULT_REGION \
+            -e TF_VAR_cloudflare_api_token \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -w /workspace/src/core \
             ghcr.io/opentofu/opentofu:1.12 \
@@ -701,6 +708,7 @@ jobs:
             -e AWS_SESSION_TOKEN \
             -e AWS_REGION \
             -e AWS_DEFAULT_REGION \
+            -e TF_VAR_cloudflare_api_token \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -w /workspace/src/service \
             ghcr.io/opentofu/opentofu:1.12 \
@@ -717,6 +725,7 @@ jobs:
             -e AWS_SESSION_TOKEN \
             -e AWS_REGION \
             -e AWS_DEFAULT_REGION \
+            -e TF_VAR_cloudflare_api_token \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -w /workspace/src/service \
             ghcr.io/opentofu/opentofu:1.12 \
@@ -733,6 +742,7 @@ jobs:
             -e AWS_SESSION_TOKEN \
             -e AWS_REGION \
             -e AWS_DEFAULT_REGION \
+            -e TF_VAR_cloudflare_api_token \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -w /workspace/src/service \
             ghcr.io/opentofu/opentofu:1.12 \
