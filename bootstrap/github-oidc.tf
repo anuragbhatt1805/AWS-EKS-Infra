@@ -20,7 +20,10 @@ resource "aws_iam_role" "github_infra_role" {
       Condition = {
         StringEquals = {
           "${var.oidc_provider_url}:aud" : var.oidc_provider_audience
-          "${var.oidc_provider_url}:sub" : "repo:${var.infra_repo}:ref:refs/heads/main"
+          "${var.oidc_provider_url}:sub" : [
+            "repo:${var.infra_repo}:ref:refs/heads/main",
+            "repo:${var.infra_repo}:pull_request"
+          ]
         }
       }
     }
