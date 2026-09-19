@@ -12,7 +12,7 @@ on:
 permissions:
   contents: read
   id-token: write
-  pull-requests: read
+  pull-requests: write
 
 concurrency:
   group: terraform-pr-${{ github.event.pull_request.number }}
@@ -23,9 +23,10 @@ env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
 
 jobs:
-  # ------------------------------------------------------------
+
+  # ============================================================
   # FORMAT CHECK
-  # ------------------------------------------------------------
+  # ============================================================
   fmt:
     name: OpenTofu Format Check
     runs-on: ubuntu-latest
@@ -34,7 +35,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: tofu fmt
+      - name: OpenTofu fmt
         run: |
           docker run --rm \
             -v "$GITHUB_WORKSPACE:/workspace" \
@@ -43,9 +44,9 @@ jobs:
             fmt -check -recursive
 
 
-  # ------------------------------------------------------------
+  # ============================================================
   # CORE PLAN
-  # ------------------------------------------------------------
+  # ============================================================
   core-plan:
     name: Core Plan
     runs-on: ubuntu-latest
@@ -64,7 +65,8 @@ jobs:
           role-session-name: github-actions-core-plan-${{ github.run_id }}
 
       - name: Verify AWS Identity
-        run: aws sts get-caller-identity
+        run: |
+          aws sts get-caller-identity
 
       - name: OpenTofu Init
         run: |
@@ -98,6 +100,125 @@ jobs:
             -var-file=vars/default.tfvars \
             -out=core.tfplan
 
+      # ----------------------------------------------------------
+      # Generate machine-readable plan
+      # ----------------------------------------------------------
+      - name: Generate Core Plan JSON
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace/src/core \
+            ghcr.io/opentofu/opentofu:1.12 \
+            show \
+            -json \
+            core.tfplan \
+            > /tmp/core-plan.json
+
+          cp /tmp/core-plan.json "$GITHUB_WORKSPACE/core-plan.json"
+
+      # ----------------------------------------------------------
+      # Generate safe human-readable report
+      # ----------------------------------------------------------
+      - name: Generate Core Plan Report
+        run: |
+          python3 <<'PY'
+          import json
+
+          with open("core-plan.json", "r", encoding="utf-8") as f:
+              plan = json.load(f)
+
+          counts = {
+              "add": 0,
+              "change": 0,
+              "replace": 0,
+              "destroy": 0,
+          }
+
+          changes = []
+          changed_outputs = []
+
+          for resource in plan.get("resource_changes", []):
+              change = resource.get("change", {})
+              actions = change.get("actions", [])
+              address = resource.get("address")
+
+              if not actions or actions == ["no-op"]:
+                  continue
+
+              if set(actions) == {"create", "delete"}:
+                  action = "replace"
+                  symbol = "♻️"
+                  counts["replace"] += 1
+
+              elif actions == ["create"]:
+                  action = "add"
+                  symbol = "➕"
+                  counts["add"] += 1
+
+              elif actions == ["update"]:
+                  action = "change"
+                  symbol = "🔄"
+                  counts["change"] += 1
+
+              elif actions == ["delete"]:
+                  action = "destroy"
+                  symbol = "➖"
+                  counts["destroy"] += 1
+
+              else:
+                  action = "/".join(actions)
+                  symbol = "•"
+
+              changes.append({
+                  "address": address,
+                  "action": action,
+                  "symbol": symbol,
+              })
+
+          for name, output in plan.get("output_changes", {}).items():
+              actions = output.get("actions", [])
+
+              if actions and actions != ["no-op"]:
+                  changed_outputs.append(name)
+
+          with open("core-plan-report.md", "w", encoding="utf-8") as f:
+              f.write("## Core\n\n")
+
+              f.write("| Action | Count |\n")
+              f.write("|---|---:|\n")
+              f.write(f"| ➕ Add | {counts['add']} |\n")
+              f.write(f"| 🔄 Change | {counts['change']} |\n")
+              f.write(f"| ♻️ Replace | {counts['replace']} |\n")
+              f.write(f"| ➖ Destroy | {counts['destroy']} |\n\n")
+
+              if changes:
+                  f.write(
+                      f"<details>\n"
+                      f"<summary>{len(changes)} resource change(s)</summary>\n\n"
+                  )
+
+                  for item in changes:
+                      f.write(
+                          f"- {item['symbol']} "
+                          f"`{item['address']}` — **{item['action']}**\n"
+                      )
+
+                  f.write("\n</details>\n")
+              else:
+                  f.write("✅ No resource changes.\n")
+
+              if changed_outputs:
+                  f.write("\n### Changed Outputs\n\n")
+
+                  for output in changed_outputs:
+                      f.write(f"- `{output}`\n")
+
+          PY
+
+      - name: Add Core Report to Job Summary
+        run: |
+          cat core-plan-report.md >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload Core Plan
         uses: actions/upload-artifact@v4
         with:
@@ -106,10 +227,18 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Upload Core Plan Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-pr-core-report-${{ github.run_id }}
+          path: core-plan-report.md
+          if-no-files-found: error
+          retention-days: 7
 
-  # ------------------------------------------------------------
+
+  # ============================================================
   # SERVICE PLAN
-  # ------------------------------------------------------------
+  # ============================================================
   service-plan:
     name: Service Plan
     runs-on: ubuntu-latest
@@ -128,7 +257,8 @@ jobs:
           role-session-name: github-actions-service-plan-${{ github.run_id }}
 
       - name: Verify AWS Identity
-        run: aws sts get-caller-identity
+        run: |
+          aws sts get-caller-identity
 
       - name: OpenTofu Init
         run: |
@@ -162,6 +292,125 @@ jobs:
             -var-file=vars/default.tfvars \
             -out=service.tfplan
 
+      # ----------------------------------------------------------
+      # Generate machine-readable plan
+      # ----------------------------------------------------------
+      - name: Generate Service Plan JSON
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace/src/service \
+            ghcr.io/opentofu/opentofu:1.12 \
+            show \
+            -json \
+            service.tfplan \
+            > /tmp/service-plan.json
+
+          cp /tmp/service-plan.json "$GITHUB_WORKSPACE/service-plan.json"
+
+      # ----------------------------------------------------------
+      # Generate safe human-readable report
+      # ----------------------------------------------------------
+      - name: Generate Service Plan Report
+        run: |
+          python3 <<'PY'
+          import json
+
+          with open("service-plan.json", "r", encoding="utf-8") as f:
+              plan = json.load(f)
+
+          counts = {
+              "add": 0,
+              "change": 0,
+              "replace": 0,
+              "destroy": 0,
+          }
+
+          changes = []
+          changed_outputs = []
+
+          for resource in plan.get("resource_changes", []):
+              change = resource.get("change", {})
+              actions = change.get("actions", [])
+              address = resource.get("address")
+
+              if not actions or actions == ["no-op"]:
+                  continue
+
+              if set(actions) == {"create", "delete"}:
+                  action = "replace"
+                  symbol = "♻️"
+                  counts["replace"] += 1
+
+              elif actions == ["create"]:
+                  action = "add"
+                  symbol = "➕"
+                  counts["add"] += 1
+
+              elif actions == ["update"]:
+                  action = "change"
+                  symbol = "🔄"
+                  counts["change"] += 1
+
+              elif actions == ["delete"]:
+                  action = "destroy"
+                  symbol = "➖"
+                  counts["destroy"] += 1
+
+              else:
+                  action = "/".join(actions)
+                  symbol = "•"
+
+              changes.append({
+                  "address": address,
+                  "action": action,
+                  "symbol": symbol,
+              })
+
+          for name, output in plan.get("output_changes", {}).items():
+              actions = output.get("actions", [])
+
+              if actions and actions != ["no-op"]:
+                  changed_outputs.append(name)
+
+          with open("service-plan-report.md", "w", encoding="utf-8") as f:
+              f.write("## Service\n\n")
+
+              f.write("| Action | Count |\n")
+              f.write("|---|---:|\n")
+              f.write(f"| ➕ Add | {counts['add']} |\n")
+              f.write(f"| 🔄 Change | {counts['change']} |\n")
+              f.write(f"| ♻️ Replace | {counts['replace']} |\n")
+              f.write(f"| ➖ Destroy | {counts['destroy']} |\n\n")
+
+              if changes:
+                  f.write(
+                      f"<details>\n"
+                      f"<summary>{len(changes)} resource change(s)</summary>\n\n"
+                  )
+
+                  for item in changes:
+                      f.write(
+                          f"- {item['symbol']} "
+                          f"`{item['address']}` — **{item['action']}**\n"
+                      )
+
+                  f.write("\n</details>\n")
+              else:
+                  f.write("✅ No resource changes.\n")
+
+              if changed_outputs:
+                  f.write("\n### Changed Outputs\n\n")
+
+                  for output in changed_outputs:
+                      f.write(f"- `{output}`\n")
+
+          PY
+
+      - name: Add Service Report to Job Summary
+        run: |
+          cat service-plan-report.md >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload Service Plan
         uses: actions/upload-artifact@v4
         with:
@@ -170,21 +419,170 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Upload Service Plan Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-pr-service-report-${{ github.run_id }}
+          path: service-plan-report.md
+          if-no-files-found: error
+          retention-days: 7
 
-  # ------------------------------------------------------------
+
+  # ============================================================
+  # PR PLAN REPORT
+  #
+  # Runs only after BOTH plans succeed.
+  #
+  # This updates one dedicated comment on the PR instead of
+  # creating a new comment for every commit.
+  # ============================================================
+  plan-report:
+    name: Publish Plan Report
+    runs-on: ubuntu-latest
+
+    needs:
+      - core-plan
+      - service-plan
+
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Download Core Report
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-pr-core-report-${{ github.run_id }}
+          path: reports/core
+
+      - name: Download Service Report
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-pr-service-report-${{ github.run_id }}
+          path: reports/service
+
+      - name: Build PR Plan Report
+        run: |
+          cat > pr-plan-report.md <<EOF
+          <!-- tofu-plan-report -->
+
+          ## 🏗️ OpenTofu Plan Report
+
+          **Commit:** \`${{ github.event.pull_request.head.sha }}\`
+
+          **PR:** #${{ github.event.pull_request.number }}
+
+          ---
+
+          EOF
+
+          cat reports/core/core-plan-report.md >> pr-plan-report.md
+
+          printf "\n---\n\n" >> pr-plan-report.md
+
+          cat reports/service/service-plan-report.md >> pr-plan-report.md
+
+          cat >> pr-plan-report.md <<EOF
+
+          ---
+
+          ### Result
+
+          ✅ **Core Plan succeeded**
+
+          ✅ **Service Plan succeeded**
+
+          The report above contains resource/action information only.
+
+          [View full workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+          _This comment is automatically updated whenever the PR gets a new plan._
+          EOF
+
+      - name: Add Report to Job Summary
+        run: |
+          cat pr-plan-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      # ----------------------------------------------------------
+      # Create or update the single PR report comment.
+      # ----------------------------------------------------------
+      - name: Create or Update PR Comment
+        uses: actions/github-script@v9
+        env:
+          REPORT_FILE: pr-plan-report.md
+        with:
+          script: |
+            const fs = require("fs");
+
+            const marker = "<!-- tofu-plan-report -->";
+            const body = fs.readFileSync(
+              process.env.REPORT_FILE,
+              "utf8"
+            );
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner,
+                repo,
+                issue_number,
+                per_page: 100,
+              }
+            );
+
+            const existingComment = comments.find(
+              comment =>
+                comment.user &&
+                comment.user.type === "Bot" &&
+                comment.body &&
+                comment.body.includes(marker)
+            );
+
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existingComment.id,
+                body,
+              });
+
+              console.log(
+                `Updated existing Terraform report comment: ${existingComment.id}`
+              );
+            } else {
+              const response =
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number,
+                  body,
+                });
+
+              console.log(
+                `Created Terraform report comment: ${response.data.id}`
+              );
+            }
+
+
+  # ============================================================
   # OPTIONAL MANUAL APPLY
   #
   # This job is NOT a required PR check.
   #
-  # It waits for approval from the "terraform-pr-apply"
-  # GitHub Environment.
-  # ------------------------------------------------------------
+  # It waits for approval from:
+  # terraform-pr-apply
+  # ============================================================
   apply:
     name: Manual Apply
     runs-on: ubuntu-latest
+
     needs:
       - core-plan
       - service-plan
+      - plan-report
 
     environment:
       name: terraform-pr-apply
@@ -193,13 +591,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # --------------------------------------------------------
-      # Prevent stale PR approvals from applying infrastructure.
+      # ----------------------------------------------------------
+      # Prevent applying an old plan.
       #
       # The PR must:
       #   1. Still be open
-      #   2. Still point to the same HEAD that was planned
-      # --------------------------------------------------------
+      #   2. Not be merged
+      #   3. Still point to the same HEAD
+      # ----------------------------------------------------------
       - name: Verify PR is still current
         env:
           GH_TOKEN: ${{ github.token }}
@@ -213,10 +612,10 @@ jobs:
           PR_MERGED="$(echo "$PR_JSON" | jq -r '.merged')"
           CURRENT_SHA="$(echo "$PR_JSON" | jq -r '.head.sha')"
 
-          echo "PR state:       $PR_STATE"
-          echo "PR merged:      $PR_MERGED"
-          echo "Expected SHA:   $EXPECTED_SHA"
-          echo "Current SHA:    $CURRENT_SHA"
+          echo "PR state:     $PR_STATE"
+          echo "PR merged:    $PR_MERGED"
+          echo "Expected SHA: $EXPECTED_SHA"
+          echo "Current SHA:  $CURRENT_SHA"
 
           if [ "$PR_STATE" != "open" ]; then
             echo "PR is no longer open. Aborting apply."
@@ -229,11 +628,14 @@ jobs:
           fi
 
           if [ "$CURRENT_SHA" != "$EXPECTED_SHA" ]; then
-            echo "PR has changed since the plan was created."
-            echo "A new PR workflow run must be used."
+            echo "PR changed after this plan was generated."
+            echo "A newer PR workflow run must be used."
             exit 1
           fi
 
+      # ----------------------------------------------------------
+      # Download Core Plan
+      # ----------------------------------------------------------
       - name: Download Core Plan
         uses: actions/download-artifact@v4
         with:
@@ -249,11 +651,12 @@ jobs:
           role-session-name: github-actions-pr-apply-${{ github.run_id }}
 
       - name: Verify AWS Identity
-        run: aws sts get-caller-identity
+        run: |
+          aws sts get-caller-identity
 
-      # --------------------------------------------------------
-      # CORE
-      # --------------------------------------------------------
+      # ==========================================================
+      # CORE APPLY
+      # ==========================================================
       - name: Core Init
         run: |
           docker run --rm \
@@ -283,16 +686,13 @@ jobs:
             ghcr.io/opentofu/opentofu:1.12 \
             apply \
             -input=false \
-            -var-file=vars/default.tfvars \
             core.tfplan
 
-      # --------------------------------------------------------
+      # ==========================================================
       # SERVICE
       #
-      # IMPORTANT:
-      # Service is planned AGAIN after Core has been applied.
-      # This prevents Service from using stale Core state.
-      # --------------------------------------------------------
+      # Service is intentionally planned AGAIN after Core Apply.
+      # ==========================================================
       - name: Service Init
         run: |
           docker run --rm \
@@ -338,5 +738,4 @@ jobs:
             ghcr.io/opentofu/opentofu:1.12 \
             apply \
             -input=false \
-            -var-file=vars/default.tfvars \
             service.tfplan
