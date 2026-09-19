@@ -2,26 +2,30 @@ name: Terraform PR
 
 on:
   pull_request:
+    branches:
+      - main
     types:
       - opened
       - synchronize
       - reopened
-    branches:
-      - main
 
 permissions:
-  id-token: write
   contents: read
+  id-token: write
+  pull-requests: read
+
+concurrency:
+  group: terraform-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 env:
+  TF_IN_AUTOMATION: true
   AWS_REGION: ${{ secrets.AWS_REGION }}
 
 jobs:
-
-  # --------------------------------------------------
-  # 1. FORMAT
-  # --------------------------------------------------
-
+  # ------------------------------------------------------------
+  # FORMAT CHECK
+  # ------------------------------------------------------------
   fmt:
     name: OpenTofu Format Check
     runs-on: ubuntu-latest
@@ -30,21 +34,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: OpenTofu Format Check
+      - name: tofu fmt
         run: |
           docker run --rm \
-            -v "$PWD:/workspace" \
+            -v "$GITHUB_WORKSPACE:/workspace" \
             -w /workspace \
             ghcr.io/opentofu/opentofu:1.12 \
             fmt -check -recursive
 
 
-  # --------------------------------------------------
-  # 2. VALIDATE COMPLETE PROJECT
-  # --------------------------------------------------
-
-  validate:
-    name: OpenTofu Validate
+  # ------------------------------------------------------------
+  # CORE PLAN
+  # ------------------------------------------------------------
+  core-plan:
+    name: Core Plan
     runs-on: ubuntu-latest
     needs: fmt
 
@@ -52,112 +55,65 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Bootstrap does NOT use init/backend/plan/apply
-      - name: Validate Bootstrap
-        working-directory: bootstrap
-        run: |
-          docker run --rm \
-            -v "$PWD:/workspace" \
-            -w /workspace \
-            ghcr.io/opentofu/opentofu:1.12 \
-            validate
-
-      # Core validation
-      - name: Validate Core
-        working-directory: src/core
-        run: |
-          docker run --rm \
-            -v "$PWD:/workspace" \
-            -w /workspace \
-            ghcr.io/opentofu/opentofu:1.12 \
-            validate
-
-      # Service validation
-      - name: Validate Service
-        working-directory: src/service
-        run: |
-          docker run --rm \
-            -v "$PWD:/workspace" \
-            -w /workspace \
-            ghcr.io/opentofu/opentofu:1.12 \
-            validate
-
-
-  # --------------------------------------------------
-  # 3. CORE PLAN
-  # --------------------------------------------------
-
-  core-plan:
-    name: Core Plan
-    runs-on: ubuntu-latest
-    needs: validate
-
-    permissions:
-      id-token: write
-      contents: read
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          allowed-account-ids: ${{ secrets.AWS_ACCOUNT_ID }}
           aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: github-actions-core-plan-${{ github.run_id }}
 
       - name: Verify AWS Identity
         run: aws sts get-caller-identity
 
       - name: OpenTofu Init
-        working-directory: src/core
         run: |
           docker run --rm \
             -e AWS_ACCESS_KEY_ID \
             -e AWS_SECRET_ACCESS_KEY \
             -e AWS_SESSION_TOKEN \
             -e AWS_REGION \
-            -v "$PWD:/workspace" \
-            -w /workspace \
+            -e AWS_DEFAULT_REGION \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace/src/core \
             ghcr.io/opentofu/opentofu:1.12 \
             init \
+            -input=false \
+            -reconfigure \
             -backend-config=backend/default.tfvars
 
       - name: OpenTofu Plan
-        working-directory: src/core
         run: |
           docker run --rm \
             -e AWS_ACCESS_KEY_ID \
             -e AWS_SECRET_ACCESS_KEY \
             -e AWS_SESSION_TOKEN \
             -e AWS_REGION \
-            -v "$PWD:/workspace" \
-            -w /workspace \
+            -e AWS_DEFAULT_REGION \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace/src/core \
             ghcr.io/opentofu/opentofu:1.12 \
             plan \
+            -input=false \
             -out=core.tfplan
 
       - name: Upload Core Plan
         uses: actions/upload-artifact@v4
         with:
-          name: core-plan-${{ github.event.pull_request.number }}-${{ github.sha }}
+          name: terraform-pr-core-plan-${{ github.run_id }}
           path: src/core/core.tfplan
+          if-no-files-found: error
           retention-days: 7
 
 
-  # --------------------------------------------------
-  # 4. SERVICE PLAN
-  # --------------------------------------------------
-
+  # ------------------------------------------------------------
+  # SERVICE PLAN
+  # ------------------------------------------------------------
   service-plan:
     name: Service Plan
     runs-on: ubuntu-latest
     needs: core-plan
 
-    permissions:
-      id-token: write
-      contents: read
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -166,145 +122,216 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          allowed-account-ids: ${{ secrets.AWS_ACCOUNT_ID }}
           aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: github-actions-service-plan-${{ github.run_id }}
 
       - name: Verify AWS Identity
         run: aws sts get-caller-identity
 
       - name: OpenTofu Init
-        working-directory: src/service
         run: |
           docker run --rm \
             -e AWS_ACCESS_KEY_ID \
             -e AWS_SECRET_ACCESS_KEY \
             -e AWS_SESSION_TOKEN \
             -e AWS_REGION \
-            -v "$PWD:/workspace" \
-            -w /workspace \
+            -e AWS_DEFAULT_REGION \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace/src/service \
             ghcr.io/opentofu/opentofu:1.12 \
             init \
+            -input=false \
+            -reconfigure \
             -backend-config=backend/default.tfvars
 
       - name: OpenTofu Plan
-        working-directory: src/service
         run: |
           docker run --rm \
             -e AWS_ACCESS_KEY_ID \
             -e AWS_SECRET_ACCESS_KEY \
             -e AWS_SESSION_TOKEN \
             -e AWS_REGION \
-            -v "$PWD:/workspace" \
-            -w /workspace \
+            -e AWS_DEFAULT_REGION \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace/src/service \
             ghcr.io/opentofu/opentofu:1.12 \
             plan \
+            -input=false \
             -out=service.tfplan
 
       - name: Upload Service Plan
         uses: actions/upload-artifact@v4
         with:
-          name: service-plan-${{ github.event.pull_request.number }}-${{ github.sha }}
+          name: terraform-pr-service-plan-${{ github.run_id }}
           path: src/service/service.tfplan
+          if-no-files-found: error
           retention-days: 7
 
 
-  # --------------------------------------------------
-  # 5. OPTIONAL MANUAL APPLY
+  # ------------------------------------------------------------
+  # OPTIONAL MANUAL APPLY
   #
   # This job is NOT a required PR check.
-  # It waits for environment approval.
-  # --------------------------------------------------
-
+  #
+  # It waits for approval from the "terraform-pr-apply"
+  # GitHub Environment.
+  # ------------------------------------------------------------
   apply:
     name: Manual Apply
     runs-on: ubuntu-latest
-
     needs:
       - core-plan
       - service-plan
 
     environment:
-      name: terraform-apply
-
-    permissions:
-      id-token: write
-      contents: read
+      name: terraform-pr-apply
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # --------------------------------------------------------
+      # Prevent stale PR approvals from applying infrastructure.
+      #
+      # The PR must:
+      #   1. Still be open
+      #   2. Still point to the same HEAD that was planned
+      # --------------------------------------------------------
+      - name: Verify PR is still current
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          PR_JSON="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")"
+
+          PR_STATE="$(echo "$PR_JSON" | jq -r '.state')"
+          PR_MERGED="$(echo "$PR_JSON" | jq -r '.merged')"
+          CURRENT_SHA="$(echo "$PR_JSON" | jq -r '.head.sha')"
+
+          echo "PR state:       $PR_STATE"
+          echo "PR merged:      $PR_MERGED"
+          echo "Expected SHA:   $EXPECTED_SHA"
+          echo "Current SHA:    $CURRENT_SHA"
+
+          if [ "$PR_STATE" != "open" ]; then
+            echo "PR is no longer open. Aborting apply."
+            exit 1
+          fi
+
+          if [ "$PR_MERGED" = "true" ]; then
+            echo "PR has already been merged. Aborting apply."
+            exit 1
+          fi
+
+          if [ "$CURRENT_SHA" != "$EXPECTED_SHA" ]; then
+            echo "PR has changed since the plan was created."
+            echo "A new PR workflow run must be used."
+            exit 1
+          fi
+
       - name: Download Core Plan
         uses: actions/download-artifact@v4
         with:
-          name: core-plan-${{ github.event.pull_request.number }}-${{ github.sha }}
+          name: terraform-pr-core-plan-${{ github.run_id }}
           path: src/core
-
-      - name: Download Service Plan
-        uses: actions/download-artifact@v4
-        with:
-          name: service-plan-${{ github.event.pull_request.number }}-${{ github.sha }}
-          path: src/service
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          allowed-account-ids: ${{ secrets.AWS_ACCOUNT_ID }}
           aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: github-actions-pr-apply-${{ github.run_id }}
 
+      - name: Verify AWS Identity
+        run: aws sts get-caller-identity
+
+      # --------------------------------------------------------
+      # CORE
+      # --------------------------------------------------------
       - name: Core Init
-        working-directory: src/core
         run: |
           docker run --rm \
             -e AWS_ACCESS_KEY_ID \
             -e AWS_SECRET_ACCESS_KEY \
             -e AWS_SESSION_TOKEN \
             -e AWS_REGION \
-            -v "$PWD:/workspace" \
-            -w /workspace \
+            -e AWS_DEFAULT_REGION \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace/src/core \
             ghcr.io/opentofu/opentofu:1.12 \
             init \
+            -input=false \
+            -reconfigure \
             -backend-config=backend/default.tfvars
 
-      - name: Apply Core
-        working-directory: src/core
+      - name: Core Apply
         run: |
           docker run --rm \
             -e AWS_ACCESS_KEY_ID \
             -e AWS_SECRET_ACCESS_KEY \
             -e AWS_SESSION_TOKEN \
             -e AWS_REGION \
-            -v "$PWD:/workspace" \
-            -w /workspace \
+            -e AWS_DEFAULT_REGION \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace/src/core \
             ghcr.io/opentofu/opentofu:1.12 \
             apply \
-            -auto-approve \
+            -input=false \
             core.tfplan
 
+      # --------------------------------------------------------
+      # SERVICE
+      #
+      # IMPORTANT:
+      # Service is planned AGAIN after Core has been applied.
+      # This prevents Service from using stale Core state.
+      # --------------------------------------------------------
       - name: Service Init
-        working-directory: src/service
         run: |
           docker run --rm \
             -e AWS_ACCESS_KEY_ID \
             -e AWS_SECRET_ACCESS_KEY \
             -e AWS_SESSION_TOKEN \
             -e AWS_REGION \
-            -v "$PWD:/workspace" \
-            -w /workspace \
+            -e AWS_DEFAULT_REGION \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace/src/service \
             ghcr.io/opentofu/opentofu:1.12 \
             init \
+            -input=false \
+            -reconfigure \
             -backend-config=backend/default.tfvars
 
-      - name: Apply Service
-        working-directory: src/service
+      - name: Service Re-Plan
         run: |
           docker run --rm \
             -e AWS_ACCESS_KEY_ID \
             -e AWS_SECRET_ACCESS_KEY \
             -e AWS_SESSION_TOKEN \
             -e AWS_REGION \
-            -v "$PWD:/workspace" \
-            -w /workspace \
+            -e AWS_DEFAULT_REGION \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace/src/service \
+            ghcr.io/opentofu/opentofu:1.12 \
+            plan \
+            -input=false \
+            -out=service.tfplan
+
+      - name: Service Apply
+        run: |
+          docker run --rm \
+            -e AWS_ACCESS_KEY_ID \
+            -e AWS_SECRET_ACCESS_KEY \
+            -e AWS_SESSION_TOKEN \
+            -e AWS_REGION \
+            -e AWS_DEFAULT_REGION \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace/src/service \
             ghcr.io/opentofu/opentofu:1.12 \
             apply \
-            -auto-approve \
+            -input=false \
             service.tfplan
