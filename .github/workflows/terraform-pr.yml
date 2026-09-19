@@ -80,7 +80,7 @@ jobs:
             init \
             -input=false \
             -reconfigure \
-            -backend-config=backend/default.tfvars
+            -backend-config=backend/default.tfbackend
 
       - name: OpenTofu Plan
         run: |
@@ -95,6 +95,7 @@ jobs:
             ghcr.io/opentofu/opentofu:1.12 \
             plan \
             -input=false \
+            -var-file=vars/default.tfvars \
             -out=core.tfplan
 
       - name: Upload Core Plan
@@ -143,7 +144,7 @@ jobs:
             init \
             -input=false \
             -reconfigure \
-            -backend-config=backend/default.tfvars
+            -backend-config=backend/default.tfbackend
 
       - name: OpenTofu Plan
         run: |
@@ -158,6 +159,7 @@ jobs:
             ghcr.io/opentofu/opentofu:1.12 \
             plan \
             -input=false \
+            -var-file=vars/default.tfvars \
             -out=service.tfplan
 
       - name: Upload Service Plan
@@ -266,7 +268,7 @@ jobs:
             init \
             -input=false \
             -reconfigure \
-            -backend-config=backend/default.tfvars
+            -backend-config=backend/default.tfbackend
 
       - name: Core Apply
         run: |
@@ -281,6 +283,7 @@ jobs:
             ghcr.io/opentofu/opentofu:1.12 \
             apply \
             -input=false \
+            -var-file=vars/default.tfvars \
             core.tfplan
 
       # --------------------------------------------------------
@@ -304,7 +307,7 @@ jobs:
             init \
             -input=false \
             -reconfigure \
-            -backend-config=backend/default.tfvars
+            -backend-config=backend/default.tfbackend
 
       - name: Service Re-Plan
         run: |
@@ -319,6 +322,7 @@ jobs:
             ghcr.io/opentofu/opentofu:1.12 \
             plan \
             -input=false \
+            -var-file=vars/default.tfvars \
             -out=service.tfplan
 
       - name: Service Apply
@@ -334,4 +338,5 @@ jobs:
             ghcr.io/opentofu/opentofu:1.12 \
             apply \
             -input=false \
+            -var-file=vars/default.tfvars \
             service.tfplan

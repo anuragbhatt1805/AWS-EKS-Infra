@@ -72,7 +72,7 @@ jobs:
             init \
             -input=false \
             -reconfigure \
-            -backend-config=backend/default.tfvars
+            -backend-config=backend/default.tfbackend
 
       - name: OpenTofu Destroy
         run: |
@@ -87,6 +87,7 @@ jobs:
             ghcr.io/opentofu/opentofu:1.12 \
             destroy \
             -input=false \
+            -var-file=vars/default.tfvars \
             -auto-approve
 
 
@@ -127,7 +128,7 @@ jobs:
             init \
             -input=false \
             -reconfigure \
-            -backend-config=backend/default.tfvars
+            -backend-config=backend/default.tfbackend
 
       - name: OpenTofu Destroy
         run: |
@@ -142,4 +143,5 @@ jobs:
             ghcr.io/opentofu/opentofu:1.12 \
             destroy \
             -input=false \
+            -var-file=vars/default.tfvars \
             -auto-approve
